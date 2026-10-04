@@ -1,0 +1,242 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Genesys Now Showreel</title>
+<style>
+@font-face{font-family:Inter;src:url(inter-latin-wght-normal.woff2) format('woff2');font-weight:100 900;font-style:normal}
+@font-face{font-family:Inter;src:url(inter-latin-wght-italic.woff2) format('woff2');font-weight:100 900;font-style:italic}
+html,body{margin:0;background:#161616}canvas{display:block;width:100vw;height:auto}
+</style></head>
+<body><canvas id="c" width="1920" height="1080"></canvas>
+<script>
+const W=1920,H=1080,DUR=32;
+const C={red:'#d82735',mark:'#e62d33',bg:'#fafaf8',ink:'#1b1b1b',dark:'#161616',muted:'#686864',border:'#dcdcd7',dMuted:'#aaa9a4',dBorder:'#393939',dInk:'#f2f2ec',surface:'#f0f0ed'};
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+
+// ---------- utils ----------
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
+const prog=(t,a,b)=>clamp((t-a)/(b-a));
+const eo=p=>1-Math.pow(1-p,5);                 // site ease cubic-bezier(.22,1,.36,1) approximation
+const eio=p=>p<.5?16*p**5:1-Math.pow(-2*p+2,5)/2;
+const ec=p=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
+const lerp=(a,b,p)=>a+(b-a)*p;
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+function font(o){return `${o.italic?'italic ':''}${o.weight||400} ${o.size}px Inter`}
+function txt(s,x,y,o={}){ctx.save();ctx.font=font(o);ctx.letterSpacing=((o.ls||0)*o.size)+'px';ctx.fillStyle=o.color||C.ink;ctx.globalAlpha*=o.alpha??1;ctx.textAlign=o.align||'left';ctx.textBaseline=o.base||'alphabetic';ctx.fillText(s,x,y);ctx.restore()}
+function measure(s,o){ctx.save();ctx.font=font(o);ctx.letterSpacing=((o.ls||0)*o.size)+'px';const w=ctx.measureText(s).width;ctx.restore();return w}
+// text segments on one line: [[str,opts],...] returns width
+function segs(list,x,y,alpha=1){let cx=x;for(const [s,o] of list){txt(s,cx,y,{...o,alpha:(o.alpha??1)*alpha});cx+=measure(s,o)}return cx-x}
+// masked rise: line slides up from below a clip box
+function rise(p,x,y,size,draw){const e=eo(clamp(p));ctx.save();ctx.beginPath();ctx.rect(x-40,y-size*1.05,W,size*1.4);ctx.clip();ctx.translate(0,(1-e)*size*1.25);draw();ctx.restore()}
+function eyebrow(s,x,y,p,light){const e=eo(clamp(p));ctx.save();ctx.globalAlpha*=e;ctx.fillStyle=C.red;ctx.fillRect(x,y-13,12,12);txt(s,x+26+(1-e)*20,y,{size:19,weight:500,ls:.09,color:light?C.dMuted:C.muted});ctx.restore()}
+function line(x1,y1,x2,y2,col,w=1.5){ctx.save();ctx.strokeStyle=col;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.restore()}
+function plus(cx,cy,s,col,w=2,rot=0){ctx.save();ctx.translate(cx,cy);ctx.rotate(rot);ctx.strokeStyle=col;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(-s,0);ctx.lineTo(s,0);ctx.moveTo(0,-s);ctx.lineTo(0,s);ctx.stroke();ctx.restore()}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
+function bg(col){ctx.fillStyle=col;ctx.fillRect(0,0,W,H)}
+function grain(col,alpha){ // faint engineering grid
+  ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=col;ctx.lineWidth=1;
+  for(let x=140;x<W;x+=205){ctx.beginPath();ctx.moveTo(x+.5,0);ctx.lineTo(x+.5,H);ctx.stroke()}
+  ctx.restore()}
+
+// ---------- brand mark ----------
+// favicon geometry: 64u tile, four 13x9 blocks rotated -25deg about centre
+const BLOCKS=[[16,21],[35,21],[16,36],[35,36]];
+function markTile(cx,cy,size,tileP,blocksCol,blockOffsets){
+  const u=size/64;ctx.save();ctx.translate(cx,cy);
+  if(tileP>0){const s=eo(tileP);ctx.save();ctx.scale(s,s);ctx.fillStyle=C.mark;rrect(-32*u,-32*u,64*u,64*u,15*u);ctx.fill();ctx.restore()}
+  ctx.rotate(-25*Math.PI/180);ctx.fillStyle=blocksCol;
+  BLOCKS.forEach(([bx,by],i)=>{const o=blockOffsets?blockOffsets[i]:[0,0,1,0];ctx.save();ctx.translate((bx-32+6.5)*u+o[0],(by-32+4.5)*u+o[1]);ctx.rotate(o[3]||0);ctx.globalAlpha*=o[2];ctx.fillRect(-6.5*u,-4.5*u,13*u,9*u);ctx.restore()});
+  ctx.restore()}
+function wordmark(x,y,size,alpha,light){const g={size,weight:650,ls:-.058,color:light?C.dInk:C.ink};const n={size:size*.48,weight:450,ls:-.03,color:light?C.dMuted:C.muted};
+  const w1=measure('genesys',g);txt('genesys',x,y,{...g,alpha});txt('now',x+w1+size*.14,y,{...n,alpha});return w1+size*.14+measure('now',n)}
+
+// ---------- assets ----------
+const IM={};const imgs=['forma','index','atelier'];
+const ready=Promise.all([document.fonts.load('600 40px Inter'),document.fonts.load('italic 430 40px Inter'),
+  ...imgs.map(n=>new Promise(r=>{const i=new Image();i.onload=()=>{IM[n]=i;r()};i.src=n+'.webp'}))]);
+function cover(img,x,y,w,h,scale=1,dx=0){const ir=img.width/img.height,r=w/h;let sw,sh;if(ir>r){sh=img.height;sw=sh*r}else{sw=img.width;sh=sw/r}sw/=scale;sh/=scale;const sx=(img.width-sw)/2+dx*sw,sy=(img.height-sh)/2;ctx.drawImage(img,sx,sy,sw,sh,x,y,w,h)}
+
+// ---------- precomputed geometry ----------
+// torus-knot point cloud (echo of the site's 3D sculpture)
+const KNOT=[];{const R=rng(7);for(let i=0;i<900;i++){const u=i/900*Math.PI*2,p=2,q=3;const r=Math.cos(q*u)+2.2;const cx=r*Math.cos(p*u),cy=r*Math.sin(p*u),cz=-Math.sin(q*u);const a=R()*Math.PI*2,tube=.42;KNOT.push([cx+Math.cos(a)*tube*Math.cos(p*u),cy+Math.cos(a)*tube*Math.sin(p*u),cz+Math.sin(a)*tube,R()<.07])}}
+// tangled lines
+const TANGLE=[];{const R=rng(11);for(let i=0;i<9;i++)TANGLE.push({ph:[R()*6,R()*6,R()*6],f:[1+R()*2,2+R()*3,.5+R()],a:[120+R()*160,60+R()*90,40+R()*60],red:i===4})}
+// pixel particles -> mark
+const PIX=[];{const R=rng(23);BLOCKS.forEach(([bx,by])=>{for(let gx=0;gx<13;gx++)for(let gy=0;gy<9;gy++){PIX.push({tx:bx+gx+.5,ty:by+gy+.5,sx:R()*W,sy:R()*H,d:R(),ph:R()*6.28,red:R()<.12})}})}
+
+// ---------- scenes ----------
+function sceneIntro(t){ // 0 - 3.6 dark
+  bg(C.dark);grain('#fff',.035);
+  const cx=W/2,cy=H/2-40,size=230,u=size/64;
+  const offs=[[-1,-1],[1,-1],[-1,1],[1,1]].map(([dx,dy],i)=>{const p=eo(prog(t,.15+i*.08,1.25+i*.08));return[dx*(1-p)*520,dy*(1-p)*360,p,(1-p)*dx*1.4]});
+  const tileP=prog(t,1.25,1.9);
+  const col=tileP>0.35?'#fff':C.red;
+  // slide whole mark left to make room for the wordmark
+  const slide=eo(prog(t,1.9,2.7));
+  const ws=96,ww=measure('genesys',{size:ws,weight:650,ls:-.058})+ws*.14+measure('now',{size:ws*.48,weight:450});
+  const total=size*.62+40+ww;const mx=lerp(cx,cx-total/2+size*.31,slide);
+  ctx.save();ctx.translate(mx,cy);const sc=lerp(1,.62,slide);ctx.scale(sc,sc);markTile(0,0,size,tileP,col,offs);ctx.restore();
+  if(t>1.9){const wx=mx+size*.31+40;ctx.save();ctx.beginPath();ctx.rect(wx-10,0,W,H);ctx.clip();ctx.translate(-(1-slide)*ww*.6,0);wordmark(wx,cy+ws*.34,ws,slide,true);ctx.restore()}
+  const tp=prog(t,2.5,3.1);
+  txt('DIGITAL SYSTEMS. BUILT RIGHT.',cx,cy+190,{size:20,weight:500,ls:.22,color:C.dMuted,align:'center',alpha:eo(tp)});
+  // corner furniture
+  const fa=eo(prog(t,.4,1.2));
+  txt('GENESYS NOW / SHOWREEL',140,90,{size:15,weight:500,ls:.12,color:C.dMuted,alpha:fa});
+  txt('2026',W-140,90,{size:15,weight:500,ls:.12,color:C.dMuted,align:'right',alpha:fa});
+  txt('BASED IN THE BAHAMAS',140,H-80,{size:15,weight:500,ls:.12,color:C.dMuted,alpha:fa});
+  txt('BUILT FOR YOUR WORLD',W-140,H-80,{size:15,weight:500,ls:.12,color:C.dMuted,align:'right',alpha:fa});
+  plus(140,140,9,C.red,2);plus(W-140,140,9,C.red,2);
+}
+
+function sculpture(cx,cy,scale,t,appear,dark){
+  const ry=t*.55,rx=.5+Math.sin(t*.4)*.18;const cyr=Math.cos(ry),syr=Math.sin(ry),cxr=Math.cos(rx),sxr=Math.sin(rx);
+  const pts=KNOT.map(([x,y,z,r],i)=>{let X=x*cyr+z*syr,Z=-x*syr+z*cyr;let Y=y*cxr-Z*sxr;Z=y*sxr+Z*cxr;const f=6/(6+Z);return[cx+X*scale*f,cy+Y*scale*f,Z,r,i]}).sort((a,b)=>b[2]-a[2]);
+  for(const [x,y,z,r,i] of pts){const a=clamp(appear*1.6-(i/KNOT.length)*.6);if(a<=0)continue;const s=lerp(9,4,(z+3)/6)*eo(a);const sh=clamp(.25+(3-z)/6*.75);ctx.globalAlpha=sh;ctx.fillStyle=r?C.red:(dark?C.dInk:C.ink);ctx.fillRect(x-s/2,y-s/2,s,s)}
+  ctx.globalAlpha=1}
+
+function sceneHero(t){ // local 0 - 4.6 light
+  bg(C.bg);grain(C.ink,.04);
+  eyebrow('DIGITAL SYSTEMS. BUILT RIGHT.',140,170,prog(t,.2,.9));
+  txt('BASED IN THE BAHAMAS · BUILT FOR YOUR WORLD',W-140,170,{size:16,weight:450,ls:.09,color:C.muted,align:'right',alpha:eo(prog(t,.4,1.1))});
+  sculpture(1460,540,80,t+3,eo(prog(t,.2,1.8)),false);
+  const hs=200,ho={size:hs,weight:600,ls:-.07};
+  rise(prog(t,.35,1.25),140,500,hs,()=>txt('Made for',140,500,ho));
+  rise(prog(t,.5,1.4),140,700,hs,()=>segs([['what’s ',ho],['next',{...ho,weight:430,italic:true}],['.',{...ho,color:C.red}]],140,700));
+  const dp=prog(t,1.3,2);txt('We turn complex business challenges into',140,815,{size:28,weight:400,color:C.muted,alpha:eo(dp)});txt('simple, powerful digital experiences.',140,855,{size:28,weight:400,color:C.muted,alpha:eo(dp)});
+  // button
+  const bp=eo(prog(t,1.6,2.3));if(bp>0){ctx.save();ctx.globalAlpha=bp;ctx.fillStyle=C.red;rrect(140,890+(1-bp)*20,330,66,4);ctx.fill();txt('Start a conversation',172,932+(1-bp)*20,{size:21,weight:500,color:'#fff'});plus(432,923+(1-bp)*20,8,'#fff',2);ctx.restore()}
+  // bottom rule + disciplines
+  const lp=ec(prog(t,.8,2.2));line(140,990,140+(W-280)*lp,990,C.border,1.5);
+  ['01 / BUILD','02 / CONNECT','03 / SIMPLIFY'].forEach((s,i)=>txt(s,1080+i*240,1030,{size:16,weight:500,ls:.08,color:C.ink,alpha:eo(prog(t,1.8+i*.2,2.4+i*.2))}));
+  txt('Strategy meets systems.',140,1030,{size:16,weight:450,ls:.02,color:C.muted,alpha:eo(prog(t,1.8,2.4))});
+  // art note
+  const ap=eo(prog(t,2,2.7));ctx.save();ctx.globalAlpha=ap;plus(1600,880,9,C.red,2);txt('Connected by design.',1625,876,{size:17,color:C.muted});txt('Built to evolve.',1625,900,{size:17,color:C.muted});ctx.restore();
+}
+
+function sceneClarity(t){ // local 0 - 4.2 light
+  bg(C.bg);grain(C.ink,.04);
+  eyebrow('A LITTLE CLARITY GOES A LONG WAY',140,170,prog(t,.15,.8));
+  const s=104,o={size:s,weight:560,ls:-.055},m={...o,color:'#a3a39e'};
+  const w1=['Technology','should','make'],w2=[['your',o],['business',o],['less',m],['complicated.',m]];
+  let x=140;w1.forEach((w,i)=>{const p=prog(t,.25+i*.09,1.1+i*.09);rise(p,x,320,s,()=>txt(w,x,320,o));x+=measure(w+' ',o)});
+  x=140;w2.forEach(([w,oo],i)=>{const p=prog(t,.55+i*.09,1.4+i*.09);rise(p,x,440,s,()=>txt(w,x,440,oo));x+=measure(w+' ',oo)});
+  // tangle -> straight lines
+  const sp=eio(prog(t,1.4,3.1));const top=600,gap=36,x0=140,x1=W-140;
+  const draw=ec(prog(t,.4,1.4));
+  TANGLE.forEach((L,i)=>{ctx.save();ctx.strokeStyle=L.red?C.red:C.ink;ctx.globalAlpha=L.red?1:.75;ctx.lineWidth=L.red?3:1.6;ctx.beginPath();
+    const yT=top+i*gap,n=140,end=Math.floor(n*draw);
+    for(let k=0;k<=end;k++){const f=k/n,xx=lerp(x0,x1,f);const tw=t*.8;
+      const noise=Math.sin(f*L.f[0]*6.28+L.ph[0]+tw)*L.a[0]+Math.sin(f*L.f[1]*6.28+L.ph[1]-tw*1.3)*L.a[1]*.6+Math.cos(f*L.f[2]*6.28+L.ph[2])*L.a[2];
+      const yy=lerp(top+gap*4+noise*.9,yT,sp);const xx2=lerp(xx+Math.sin(f*9+L.ph[1])*60*(1-f)*(1-f),xx,sp);
+      k?ctx.lineTo(xx2,yy):ctx.moveTo(xx2,yy)}
+    ctx.stroke();ctx.restore()});
+  // endpoints become nodes
+  const np=eo(prog(t,2.9,3.4));if(np>0)TANGLE.forEach((L,i)=>{ctx.save();ctx.globalAlpha=np;ctx.fillStyle=L.red?C.red:C.ink;ctx.fillRect(x1-5,top+i*gap-5,10,10);ctx.fillRect(x0-5,top+i*gap-5,10,10);ctx.restore()});
+  const cp=eo(prog(t,3,3.6));txt('Less manual work. Fewer disconnected tools. More room to grow.',140,1000,{size:22,weight:450,color:C.muted,alpha:cp});
+  ctx.save();ctx.translate(W-170,990);ctx.rotate(t*1.4);txt('✳',0,0,{size:70,weight:400,color:C.red,align:'center',base:'middle',alpha:cp});ctx.restore();
+}
+
+const SERVICES=['Web applications','Custom business solutions','System integrations','Payment systems','Process automation','Business optimization'];
+function sceneCapabilities(t){ // local 0 - 5 dark
+  bg(C.dark);grain('#fff',.035);
+  eyebrow('WHAT WE DO',140,170,prog(t,.15,.8),true);
+  const hs=104,ho={size:hs,weight:560,ls:-.055,color:C.dInk};
+  rise(prog(t,.25,1.1),140,330,hs,()=>txt('Built around',140,330,ho));
+  rise(prog(t,.4,1.25),140,450,hs,()=>txt('your business.',140,450,{...ho,color:'#777772'}));
+  txt('Six connected capabilities.',140,560,{size:24,color:C.dMuted,alpha:eo(prog(t,1,1.6))});
+  txt('One partner from the first question',140,596,{size:24,color:C.dMuted,alpha:eo(prog(t,1.1,1.7))});
+  txt('to what comes after launch.',140,632,{size:24,color:C.dMuted,alpha:eo(prog(t,1.2,1.8))});
+  const lx=1000,rx=W-140,ry0=170,rh=132;
+  const active=Math.floor(clamp((t-1.9)/0.5,0,5.99));const scanOn=t>1.9;
+  SERVICES.forEach((s,i)=>{const p=prog(t,.5+i*.12,1.4+i*.12),e=eo(p),y=ry0+i*rh;
+    line(lx,y,lx+(rx-lx)*ec(p),y,C.dBorder,1.5);
+    const isA=scanOn&&i===active;
+    if(isA){const ap=eo(prog(t,1.9+i*.5,2.15+i*.5));ctx.save();ctx.fillStyle=C.red;ctx.fillRect(lx,y,(rx-lx)*ap,3);ctx.restore()}
+    ctx.save();ctx.globalAlpha=e;ctx.translate((1-e)*80,0);
+    txt('0'+(i+1),lx,y+78,{size:16,weight:500,ls:.06,color:C.red});
+    txt(s,lx+70,y+86,{size:46,weight:isA?560:480,ls:-.035,color:isA||!scanOn?C.dInk:'#8a8a85'});
+    ctx.beginPath();ctx.arc(rx-30,y+70,29,0,Math.PI*2);ctx.strokeStyle=isA?C.red:C.dBorder;ctx.fillStyle=isA?C.red:'transparent';ctx.lineWidth=1.5;isA?ctx.fill():ctx.stroke();
+    plus(rx-30,y+70,9,isA?'#fff':C.dInk,2,isA?Math.PI/4*eo(prog(t,1.9+i*.5,2.2+i*.5)):0);
+    ctx.restore()});
+  line(lx,ry0+6*rh,lx+(rx-lx)*ec(prog(t,1.2,2)),ry0+6*rh,C.dBorder,1.5);
+  const fp=eo(prog(t,2.2,2.8));txt('Good systems connect everything.',140,960,{size:20,color:C.dMuted,alpha:fp});txt('So do we.',140,990,{size:20,color:C.dMuted,alpha:fp});
+}
+
+const PROJ=[['forma','Forma','A clearer view of your financial world.','PRODUCT DESIGN'],['index','Index','Architecture, given room to breathe.','BRAND & WEBSITE'],['atelier','Atelier','Everyday objects. Extraordinary presence.','BRAND & COMMERCE']];
+function sceneWork(t){ // local 0 - 4.6 light
+  bg(C.bg);grain(C.ink,.04);
+  eyebrow('IDEAS IN ACTION',140,170,prog(t,.15,.8));
+  const hs=104,ho={size:hs,weight:560,ls:-.055};
+  rise(prog(t,.2,1.05),140,320,hs,()=>txt('Possibility,',140,320,ho));
+  rise(prog(t,.35,1.2),140,440,hs,()=>txt('made tangible.',140,440,ho));
+  txt('Three original concept explorations.',W-140,300,{size:24,color:C.muted,align:'right',alpha:eo(prog(t,.8,1.4))});
+  const cw=520,ch=347,gap=40,y=520,drift=lerp(40,-40,prog(t,0,4.6));
+  PROJ.forEach(([k,n,tag,type],i)=>{const x=140+i*(cw+gap)+drift;const p=eio(prog(t,.55+i*.18,1.55+i*.18));
+    if(p<=0)return;ctx.save();ctx.beginPath();ctx.rect(x,y+ch*(1-p),cw,ch*p);ctx.clip();cover(IM[k],x,y,cw,ch,lerp(1.25,1.04,eo(prog(t,.55+i*.18,4.4))));ctx.restore();
+    const tp=eo(prog(t,1.2+i*.18,1.8+i*.18));ctx.save();ctx.globalAlpha=tp;
+    ctx.fillStyle='rgba(250,250,248,.94)';rrect(x+16,y+16,168,34,3);ctx.fill();txt('CONCEPT STUDY',x+31,y+39,{size:14,weight:550,ls:.08,color:C.ink});
+    txt(n,x,y+ch+58,{size:40,weight:600,ls:-.04});txt(type,x+cw,y+ch+52,{size:14,weight:500,ls:.08,color:C.muted,align:'right'});
+    txt(tag,x,y+ch+96,{size:20,color:C.muted});ctx.restore()});
+}
+
+function sceneProcess(t){ // local 0 - 3.4 light
+  bg(C.surface);grain(C.ink,.04);
+  eyebrow('HOW WE MAKE IT HAPPEN',140,170,prog(t,.1,.7));
+  const hs=104,ho={size:hs,weight:560,ls:-.055};
+  rise(prog(t,.15,1),140,320,hs,()=>txt('Clear thinking.',140,320,ho));
+  rise(prog(t,.3,1.15),140,440,hs,()=>txt('Considered execution.',140,440,{...ho,color:'#a3a39e'}));
+  const steps=[['01','Understand','We ask better questions. Map your workflows.'],['02','Create','We design the right experience and build it.'],['03','Evolve','We test, launch and stay involved.']];
+  const y=640,x0=140,cw=(W-280)/3;
+  const lp=eio(prog(t,.6,2.6));line(x0,y,x0+(W-280)*lp,y,C.border,2);ctx.save();ctx.fillStyle=C.red;ctx.fillRect(x0,y-1.5,(W-280)*lp,3);ctx.restore();
+  steps.forEach(([n,ti,d],i)=>{const x=x0+i*cw;const at=.6+i*.62;const p=eo(prog(t,at,at+.7));
+    ctx.save();ctx.globalAlpha=p;ctx.fillStyle=C.red;ctx.fillRect(x-1,y-14,14,14+14);ctx.restore();
+    ctx.save();ctx.globalAlpha=p;ctx.translate(0,(1-p)*30);
+    txt(n,x,y+70,{size:18,weight:500,ls:.06,color:C.red});plus(x+60,y+64,8,C.red,2,p*Math.PI/2);
+    txt(ti,x,y+160,{size:64,weight:560,ls:-.045});txt(d,x,y+215,{size:22,color:C.muted});ctx.restore()});
+}
+
+function sceneFinale(t){ // local 0 - 6.6 dark : pixels -> mark -> end card
+  bg(C.dark);grain('#fff',.035);
+  const hs=104,ho={size:hs,weight:560,ls:-.055,color:C.dInk};
+  const outP=eio(prog(t,2.9,3.5));
+  ctx.save();ctx.globalAlpha=1-outP;
+  eyebrow('EVERYTHING WORKS BETTER, TOGETHER',140,170,prog(t,.1,.7),true);
+  rise(prog(t,.2,1.05),140,320,hs,()=>txt('Different parts.',140,320,ho));
+  rise(prog(t,.45,1.3),140,440,hs,()=>segs([['One ',ho],['direction',{...ho,weight:430,italic:true}],['.',{...ho,color:C.red}]],140,440));
+  ctx.restore();
+  // mark position: right side, then centre-left for end card
+  const endP=eio(prog(t,3.1,4.2));
+  const ws=110,ww=measure('genesys',{size:ws,weight:650,ls:-.058})+ws*.14+measure('now',{size:ws*.48,weight:450,ls:-.03});
+  const endSize=150,endTotal=endSize+44+ww;
+  const mcx=lerp(1380,W/2-endTotal/2+endSize/2,endP),mcy=lerp(600,470,endP),msize=lerp(470,endSize,endP),u=msize/64;
+  const conv=eio(prog(t,.4,2.6));const solid=prog(t,2.6,3.1);
+  if(solid<1){ctx.save();ctx.globalAlpha=1-solid*0;
+    PIX.forEach(q=>{const drift=t*30;const sx=(q.sx+Math.sin(t*.7+q.ph)*40+drift*(q.d-.5))%W,sy=q.sy+Math.cos(t*.6+q.ph)*30;
+      const ang=-25*Math.PI/180,lx=(q.tx-32)*u,ly=(q.ty-32)*u;const tx=mcx+lx*Math.cos(ang)-ly*Math.sin(ang),ty=mcy+lx*Math.sin(ang)+ly*Math.cos(ang);
+      const pp=clamp(conv*1.25-q.d*.25);const e=eio(pp);const x=lerp(sx,tx,e),y=lerp(sy,ty,e);const s=lerp(7,u*1.02,e);
+      ctx.globalAlpha=(1-solid)*lerp(.55,1,e);ctx.fillStyle=q.red&&e<.98?C.red:C.dInk;ctx.save();ctx.translate(x,y);ctx.rotate(lerp(q.ph,ang,e));ctx.fillRect(-s/2,-s/2,s,s);ctx.restore()});
+    ctx.restore()}
+  if(solid>0){ctx.save();ctx.globalAlpha=1;markTile(mcx,mcy,msize,prog(t,2.75,3.4),solid<.5?C.dInk:'#fff',[0,1,2,3].map(()=>[0,0,clamp(solid*2),0]));ctx.restore()}
+  // end card
+  if(t>4){const wp=eo(prog(t,4,4.8));const wx=mcx+endSize/2+44;ctx.save();ctx.beginPath();ctx.rect(Math.max(wx-8,mcx+msize/2+8),0,W,H);ctx.clip();ctx.translate(-(1-wp)*ww*.5,0);wordmark(wx,mcy+ws*.35,ws,wp,true);ctx.restore()}
+  const tp=eo(prog(t,4.4,5.1));
+  segs([['Made for what’s ',{size:56,weight:560,ls:-.04,color:C.dInk}],['next',{size:56,weight:430,italic:true,ls:-.04,color:C.dInk}],['.',{size:56,weight:560,color:C.red}]],W/2-measure('Made for what’s next.',{size:56,weight:540,ls:-.04})/2,690+(1-tp)*20,tp);
+  const cp=eo(prog(t,4.8,5.4));
+  const lw=lerp(0,560,ec(prog(t,4.7,5.5)));line(W/2-lw/2,760,W/2+lw/2,760,C.dBorder,1.5);
+  txt('genesysnow.com',W/2,820,{size:24,weight:500,ls:.02,color:C.dInk,align:'center',alpha:cp});
+  txt('DIGITAL SYSTEMS AGENCY · THE BAHAMAS',W/2,862,{size:16,weight:500,ls:.16,color:C.dMuted,align:'center',alpha:cp});
+}
+
+// ---------- timeline ----------
+const SC=[[0,3.6,sceneIntro],[3.6,8.2,sceneHero],[8.2,12.4,sceneClarity],[12.4,17.4,sceneCapabilities],[17.4,22,sceneWork],[22,25.4,sceneProcess],[25.4,DUR,sceneFinale]];
+const WIPES=[[3.6,C.red,1],[8.2,C.ink,-1],[12.4,C.red,1],[17.4,C.red,-1],[22,C.ink,1],[25.4,C.red,1]];
+function wipe(t){for(const [at,col,dir] of WIPES){const p=prog(t,at-.38,at+.38);if(p<=0||p>=1)continue;
+  // panel enters to cover, then exits; plus a thinner trailing band
+  const e=eio(p);const x=dir>0?lerp(-W,W,e):lerp(W,-W,e);ctx.fillStyle=col;ctx.fillRect(x,0,W,H);
+  const e2=eio(clamp(p*1.15-.15));const x2=dir>0?lerp(-W,W,e2):lerp(W,-W,e2);ctx.fillStyle=col===C.red?C.dark:C.red;ctx.fillRect(dir>0?x2+W-24:x2,0,24,H)}}
+function render(t){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;
+  const s=SC.find(([a,b])=>t>=a&&t<b)||SC[SC.length-1];s[2](t-s[0]);wipe(t);
+  // fade from/to dark for seamless looping
+  const f=Math.max(1-prog(t,0,.4),prog(t,DUR-.6,DUR));if(f>0){ctx.globalAlpha=f;bg(C.dark);ctx.globalAlpha=1}}
+window.render=render;window.ready=ready;window.DUR=DUR;
+ready.then(()=>{const q=new URLSearchParams(location.search);if(q.has('t'))render(+q.get('t'));else{const st=performance.now();(function loop(){render(((performance.now()-st)/1000)%DUR);requestAnimationFrame(loop)})()}});
+</script></body></html>

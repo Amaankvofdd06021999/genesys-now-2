@@ -1,0 +1,2 @@
+import Link from 'next/link';
+export default function NotFound(){return <main id="main" className="wrap page-intro"><p className="eyebrow">404 / A small detour</p><h1>Not quite<br/>what’s next.</h1><p className="page-lead">This page doesn’t exist. Let’s get you back to the right place.</p><Link href="/" className="button" style={{marginTop:30}}>Back to Genesys Now</Link></main>}
